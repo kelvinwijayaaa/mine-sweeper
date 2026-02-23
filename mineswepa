@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Minesweeper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Mencegah seleksi teks dan zoom pada double tap di mobile */
+        .cell {
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        /* Animasi sederhana untuk cell yang terbuka */
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .revealed-anim {
+            animation: pop 0.2s ease-out forwards;
+        }
+
+        /* Scrollbar kustom untuk papan yang besar */
+        .board-container::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .board-container::-webkit-scrollbar-thumb {
+            background: #a0aec0;
+            border-radius: 4px;
+        }
+        .board-container::-webkit-scrollbar-track {
+            background: #edf2f7;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen flex items-center justify-center p-2 sm:p-4">
+
+    <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full max-w-3xl flex flex-col items-center">
+        <!-- Header -->
+        <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 mb-6">
+            Minesweeper
+        </h1>
+
+        <!-- Info Panel -->
+        <div class="w-full bg-gray-800 text-white rounded-xl p-4 flex justify-between items-center mb-6 shadow-inner">
+            <div class="flex items-center space-x-2 text-xl font-bold bg-gray-700 px-3 py-1 rounded-lg">
+                <span>⏱️</span>
+                <span id="timerDisplay">000</span>
+            </div>
+            
+            <button id="resetBtn" class="text-3xl hover:scale-110 transition-transform focus:outline-none" onclick="initGame()">
+                🙂
+            </button>
+
+            <div class="flex items-center space-x-2 text-xl font-bold bg-gray-700 px-3 py-1 rounded-lg">
+                <span>🚩</span>
+                <span id="flagDisplay">000</span>
+            </div>
+        </div>
+
+        <!-- Kontrol -->
+        <div class="w-full flex flex-wrap justify-between items-center gap-3 mb-4">
+            <select id="difficulty" onchange="changeDifficulty()" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 font-medium shadow-sm">
+                <option value="easy">Mudah (9x9, 10 Ranjau)</option>
+                <option value="medium">Sedang (16x16, 40 Ranjau)</option>
+                <option value="hard">Sulit (30x16, 99 Ranjau)</option>
+            </select>
+
+            <!-- Tombol Mode untuk Mobile -->
+            <button id="modeToggle" onclick="toggleMode()" class="flex items-center space-x-2 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg font-bold shadow-sm border border-blue-300 transition-colors">
+                <span id="modeIcon">⛏️</span>
+                <span id="modeText">Mode: Gali</span>
+            </button>
+        </div>
+
+        <!-- Papan Game -->
+        <div class="w-full overflow-auto board-container bg-gray-300 p-2 rounded-xl shadow-inner border-4 border-gray-400">
+            <div id="board" class="grid gap-[2px] mx-auto w-max bg-gray-400">
+                <!-- Cell akan di-generate oleh JS -->
+            </div>
+        </div>
+
+        <!-- Pesan Status -->
+        <div id="statusMessage" class="mt-4 text-xl font-bold hidden text-center"></div>
+    </div>
+
+    <script>
+        // Konfigurasi Tingkat Kesulitan
+        const CONFIG = {
+            easy: { rows: 9, cols: 9, mines: 10 },
+            medium: { rows: 16, cols: 16, mines: 40 },
+            hard: { rows: 16, cols: 30, mines: 99 } // 16 baris, 30 kolom
+        };
+
+        // Warna untuk angka (1-8)
+        const NUMBER_COLORS = [
+            '', // 0 (kosong)
+            'text-blue-600',
+            'text-green-600',
+            'text-red-500',
+            'text-purple-700',
+            'text-red-900',
+            'text-teal-600',
+            'text-black',
+            'text-gray-600'
+        ];
+
+        let board = [];
+        let rows, cols, totalMines;
+        let flagsLeft = 0;
+        let isGameOver = false;
+        let firstClick = true;
+        let timer = 0;
+        let timerInterval = null;
+        let currentMode = 'dig'; // 'dig' atau 'flag'
+
+        // Elemen DOM
+        const boardEl = document.getElementById('board');
+        const timerEl = document.getElementById('timerDisplay');
+        const flagEl = document.getElementById('flagDisplay');
+        const resetBtn = document.getElementById('resetBtn');
+        const statusMessage = document.getElementById('statusMessage');
+        const modeToggle = document.getElementById('modeToggle');
+        const modeIcon = document.getElementById('modeIcon');
+        const modeText = document.getElementById('modeText');
+
+        // Mencegah menu konteks (klik kanan) pada papan
+        boardEl.addEventListener('contextmenu', e => e.preventDefault());
+
+        function toggleMode() {
+            if (currentMode === 'dig') {
+                currentMode = 'flag';
+                modeIcon.textContent = '🚩';
+                modeText.textContent = 'Mode: Tandai';
+                modeToggle.classList.replace('bg-blue-100', 'bg-yellow-100');
+                modeToggle.classList.replace('text-blue-800', 'text-yellow-800');
+                modeToggle.classList.replace('border-blue-300', 'border-yellow-300');
+            } else {
+                currentMode = 'dig';
+                modeIcon.textContent = '⛏️';
+                modeText.textContent = 'Mode: Gali';
+                modeToggle.classList.replace('bg-yellow-100', 'bg-blue-100');
+                modeToggle.classList.replace('text-yellow-800', 'text-blue-800');
+                modeToggle.classList.replace('border-yellow-300', 'border-blue-300');
+            }
+        }
+
+        function changeDifficulty() {
+            initGame();
+        }
+
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            timer = 0;
+            timerEl.textContent = '000';
+            timerInterval = setInterval(() => {
+                timer++;
+                timerEl.textContent = timer.toString().padStart(3, '0');
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+        }
+
+        function initGame() {
+            const diff = document.getElementById('difficulty').value;
+            rows = CONFIG[diff].rows;
+            cols = CONFIG[diff].cols;
+            totalMines = CONFIG[diff].mines;
+            flagsLeft = totalMines;
+            
+            isGameOver = false;
+            firstClick = true;
+            stopTimer();
+            timerEl.textContent = '000';
+            updateFlagDisplay();
+            resetBtn.textContent = '🙂';
+            statusMessage.classList.add('hidden');
+            
+            // Atur gaya grid
+            boardEl.style.gridTemplateColumns = `repeat(${cols}, minmax(32px, 40px))`;
+            boardEl.style.gridTemplateRows = `repeat(${rows}, minmax(32px, 40px))`;
+            boardEl.innerHTML = '';
+
+            // Inisialisasi array data papan
+            board = Array.from({ length: rows }, () => 
+                Array.from({ length: cols }, () => ({
+                    isMine: false,
+                    isRevealed: false,
+                    isFlagged: false,
+                    neighborMines: 0
+                }))
+            );
+
+            // Buat elemen cell di DOM
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell bg-gray-200 hover:bg-gray-300 cursor-pointer flex items-center justify-center text-xl font-bold shadow-[inset_-2px_-2px_0px_rgba(0,0,0,0.2),inset_2px_2px_0px_rgba(255,255,255,0.7)] transition-colors';
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    
+                    // Event Listeners
+                    cell.addEventListener('click', () => handleCellClick(r, c));
+                    cell.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        handleRightClick(r, c);
+                    });
+
+                    boardEl.appendChild(cell);
+                }
+            }
+        }
+
+        function placeMines(firstRow, firstCol) {
+            let minesPlaced = 0;
+            while (minesPlaced < totalMines) {
+                const r = Math.floor(Math.random() * rows);
+                const c = Math.floor(Math.random() * cols);
+                
+                // Pastikan ranjau tidak diletakkan di klik pertama dan area di sekitarnya jika memungkinkan, atau minimal di sel yang di klik
+                if (!board[r][c].isMine && (Math.abs(r - firstRow) > 1 || Math.abs(c - firstCol) > 1)) {
+                    board[r][c].isMine = true;
+                    minesPlaced++;
+                }
+            }
+            calculateNeighbors();
+        }
+
+        function calculateNeighbors() {
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    if (board[r][c].isMine) continue;
+                    let count = 0;
+                    for (let i = -1; i <= 1; i++) {
+                        for (let j = -1; j <= 1; j++) {
+                            const newR = r + i;
+                            const newC = c + j;
+                            if (newR >= 0 && newR < rows && newC >= 0 && newC < cols) {
+                                if (board[newR][newC].isMine) count++;
+                            }
+                        }
+                    }
+                    board[r][c].neighborMines = count;
+                }
+            }
+        }
+
+        function updateFlagDisplay() {
+            flagEl.textContent = flagsLeft.toString().padStart(3, '0');
+        }
+
+        function getCellEl(r, c) {
+            return boardEl.children[r * cols + c];
+        }
+
+        function handleCellClick(r, c) {
+            if (isGameOver || board[r][c].isRevealed) return;
+
+            if (currentMode === 'flag') {
+                handleRightClick(r, c);
+                return;
+            }
+
+            if (board[r][c].isFlagged) return; // Jangan gali yang ditandai
+
+            if (firstClick) {
+                placeMines(r, c);
+                startTimer();
+                firstClick = false;
+            }
+
+            revealCell(r, c);
+            checkWin();
+        }
+
+        function handleRightClick(r, c) {
+            if (isGameOver || board[r][c].isRevealed) return;
+
+            const cell = board[r][c];
+            const cellEl = getCellEl(r, c);
+
+            if (!cell.isFlagged && flagsLeft > 0) {
+                cell.isFlagged = true;
+                flagsLeft--;
+                cellEl.innerHTML = '🚩';
+            } else if (cell.isFlagged) {
+                cell.isFlagged = false;
+                flagsLeft++;
+                cellEl.innerHTML = '';
+            }
+            updateFlagDisplay();
+        }
+
+        function revealCell(r, c) {
+            const cell = board[r][c];
+            if (cell.isRevealed || cell.isFlagged) return;
+
+            cell.isRevealed = true;
+            const cellEl = getCellEl(r, c);
+            
+            // Hapus efek tombol (bevel) dan ganti warna
+            cellEl.className = 'cell bg-gray-100 flex items-center justify-center text-xl font-bold border border-gray-300 revealed-anim';
+
+            if (cell.isMine) {
+                cellEl.innerHTML = '💥';
+                cellEl.classList.add('bg-red-500');
+                gameOver(false);
+                return;
+            }
+
+            if (cell.neighborMines > 0) {
+                cellEl.textContent = cell.neighborMines;
+                cellEl.classList.add(NUMBER_COLORS[cell.neighborMines]);
+            } else {
+                // Gunakan antrian untuk flood fill iteratif untuk mencegah error tumpukan panggilan (call stack size exceeded)
+                const queue = [[r, c]];
+                while(queue.length > 0) {
+                    const [currR, currC] = queue.shift();
+                    
+                    for (let i = -1; i <= 1; i++) {
+                        for (let j = -1; j <= 1; j++) {
+                            const nR = currR + i;
+                            const nC = currC + j;
+                            if (nR >= 0 && nR < rows && nC >= 0 && nC < cols) {
+                                const nCell = board[nR][nC];
+                                if (!nCell.isRevealed && !nCell.isFlagged) {
+                                    nCell.isRevealed = true;
+                                    const nCellEl = getCellEl(nR, nC);
+                                    nCellEl.className = 'cell bg-gray-100 flex items-center justify-center text-xl font-bold border border-gray-300 revealed-anim';
+                                    
+                                    if (nCell.neighborMines > 0) {
+                                        nCellEl.textContent = nCell.neighborMines;
+                                        nCellEl.classList.add(NUMBER_COLORS[nCell.neighborMines]);
+                                    } else {
+                                        queue.push([nR, nC]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function checkWin() {
+            if (isGameOver) return;
+            let revealedCount = 0;
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    if (board[r][c].isRevealed) revealedCount++;
+                }
+            }
+            if (revealedCount === (rows * cols) - totalMines) {
+                gameOver(true);
+            }
+        }
+
+        function gameOver(win) {
+            isGameOver = true;
+            stopTimer();
+            resetBtn.textContent = win ? '😎' : '😵';
+
+            statusMessage.classList.remove('hidden');
+            statusMessage.classList.remove('text-green-600', 'text-red-600');
+            
+            if (win) {
+                statusMessage.textContent = '🎉 Selamat! Anda Menang! 🎉';
+                statusMessage.classList.add('text-green-600');
+                // Tandai semua ranjau yang tersisa
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        if (board[r][c].isMine && !board[r][c].isFlagged) {
+                            const cellEl = getCellEl(r, c);
+                            cellEl.innerHTML = '🚩';
+                        }
+                    }
+                }
+                flagsLeft = 0;
+                updateFlagDisplay();
+            } else {
+                statusMessage.textContent = 'Boom! Anda terkena Ranjau!';
+                statusMessage.classList.add('text-red-600');
+                // Tampilkan semua ranjau
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        const cell = board[r][c];
+                        if (cell.isMine) {
+                            const cellEl = getCellEl(r, c);
+                            if (!cell.isRevealed && !cell.isFlagged) {
+                                cellEl.innerHTML = '💣';
+                                cellEl.className = 'cell bg-gray-100 flex items-center justify-center text-xl border border-gray-300 revealed-anim';
+                            } else if (cell.isFlagged && !cell.isMine) { // Salah menandai
+                                cellEl.innerHTML = '❌';
+                            }
+                        } else if (cell.isFlagged) {
+                             const cellEl = getCellEl(r, c);
+                             cellEl.innerHTML = '❌'; // Bendera salah
+                        }
+                    }
+                }
+            }
+        }
+
+        // Mulai game saat pertama kali dimuat
+        initGame();
+    </script>
+</body>
+</html>
