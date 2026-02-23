@@ -13,7 +13,7 @@
             user-select: none;
             -webkit-user-select: none;
             aspect-ratio: 1 / 1;
-            font-size: clamp(8px, 2.5vw, 20px);
+            font-size: clamp(10px, 2vw, 18px);
         }
         
         /* Animasi sederhana untuk cell yang terbuka */
@@ -83,12 +83,20 @@
                 <option value="hard">Sulit (30x16, 99 Ranjau)</option>
             </select>
 
-            <!-- Tombol Mode untuk Mobile -->
-        <button id="modeToggle" onclick="toggleMode()" class="flex items-center space-x-2 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg font-bold shadow-sm border border-blue-300 transition-colors">
-            <span id="modeIcon">⛏️</span>
-            <span id="modeText">Mode: Gali</span>
-        </button>
-    </div>
+            <div class="flex gap-2">
+                <!-- Tombol Mode untuk Mobile -->
+                <button id="modeToggle" onclick="toggleMode()" class="flex items-center space-x-2 bg-blue-100 text-blue-800 px-3 py-2 sm:px-4 rounded-lg font-bold shadow-sm border border-blue-300 transition-colors">
+                    <span id="modeIcon">⛏️</span>
+                    <span id="modeText" class="hidden sm:inline">Mode: Gali</span>
+                </button>
+
+                <!-- Tombol Ulang -->
+                <button onclick="initGame()" class="flex items-center space-x-2 bg-green-100 text-green-800 px-3 py-2 sm:px-4 rounded-lg font-bold shadow-sm border border-green-300 hover:bg-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-400">
+                    <span>🔄</span>
+                    <span class="hidden sm:inline">Ulang</span>
+                </button>
+            </div>
+        </div>
 
     <!-- Papan Game -->
     <div class="w-full bg-gray-300 p-1 sm:p-2 rounded-xl shadow-inner border-4 border-gray-400">
@@ -198,8 +206,9 @@
         // Hapus animasi shake jika ada
         document.getElementById('gameContainer').classList.remove('shake-anim');
 
-        // Atur gaya grid agar menyesuaikan lebar secara proporsional
-        boardEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        // Atur gaya grid agar selnya tidak terlalu besar di desktop (max 38px per sel)
+        boardEl.style.gridTemplateColumns = `repeat(${cols}, minmax(10px, 38px))`;
+        boardEl.style.justifyContent = 'center';
         boardEl.innerHTML = '';
 
         // Inisialisasi array data papan
