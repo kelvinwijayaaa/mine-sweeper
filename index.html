@@ -5,12 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Minesweeper</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <style>
         /* Mencegah seleksi teks dan zoom pada double tap di mobile */
         .cell {
             touch-action: manipulation;
             user-select: none;
             -webkit-user-select: none;
+            aspect-ratio: 1 / 1;
+            font-size: clamp(8px, 2.5vw, 20px);
         }
         
         /* Animasi sederhana untuk cell yang terbuka */
@@ -22,23 +25,34 @@
             animation: pop 0.2s ease-out forwards;
         }
 
-        /* Scrollbar kustom untuk papan yang besar */
-        .board-container::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+        /* Animasi ledakan (kocok layar) */
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
         }
-        .board-container::-webkit-scrollbar-thumb {
-            background: #a0aec0;
-            border-radius: 4px;
+        .shake-anim {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
         }
-        .board-container::-webkit-scrollbar-track {
-            background: #edf2f7;
+        
+        .mine-explode {
+            animation: pop 0.3s ease-out forwards, shake 0.4s ease-in-out;
+            background-color: #ef4444 !important; /* red-500 */
+            z-index: 10;
         }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans min-h-screen flex items-center justify-center p-2 sm:p-4">
 
-    <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full max-w-3xl flex flex-col items-center">
+    <div id="gameContainer" class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full max-w-4xl flex flex-col items-center transition-transform">
         <!-- Header -->
         <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 mb-6">
             Minesweeper
@@ -70,20 +84,20 @@
             </select>
 
             <!-- Tombol Mode untuk Mobile -->
-            <button id="modeToggle" onclick="toggleMode()" class="flex items-center space-x-2 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg font-bold shadow-sm border border-blue-300 transition-colors">
-                <span id="modeIcon">⛏️</span>
-                <span id="modeText">Mode: Gali</span>
-            </button>
-        </div>
+        <button id="modeToggle" onclick="toggleMode()" class="flex items-center space-x-2 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg font-bold shadow-sm border border-blue-300 transition-colors">
+            <span id="modeIcon">⛏️</span>
+            <span id="modeText">Mode: Gali</span>
+        </button>
+    </div>
 
-        <!-- Papan Game -->
-        <div class="w-full overflow-auto board-container bg-gray-300 p-2 rounded-xl shadow-inner border-4 border-gray-400">
-            <div id="board" class="grid gap-[2px] mx-auto w-max bg-gray-400">
-                <!-- Cell akan di-generate oleh JS -->
-            </div>
+    <!-- Papan Game -->
+    <div class="w-full bg-gray-300 p-1 sm:p-2 rounded-xl shadow-inner border-4 border-gray-400">
+        <div id="board" class="grid gap-[1px] mx-auto w-full bg-gray-400">
+            <!-- Cell akan di-generate oleh JS -->
         </div>
+    </div>
 
-        <!-- Pesan Status -->
+    <!-- Pesan Status -->
         <div id="statusMessage" class="mt-4 text-xl font-bold hidden text-center"></div>
     </div>
 
@@ -167,28 +181,30 @@
         }
 
         function initGame() {
-            const diff = document.getElementById('difficulty').value;
-            rows = CONFIG[diff].rows;
-            cols = CONFIG[diff].cols;
-            totalMines = CONFIG[diff].mines;
-            flagsLeft = totalMines;
-            
-            isGameOver = false;
-            firstClick = true;
-            stopTimer();
-            timerEl.textContent = '000';
-            updateFlagDisplay();
-            resetBtn.textContent = '🙂';
-            statusMessage.classList.add('hidden');
-            
-            // Atur gaya grid
-            boardEl.style.gridTemplateColumns = `repeat(${cols}, minmax(32px, 40px))`;
-            boardEl.style.gridTemplateRows = `repeat(${rows}, minmax(32px, 40px))`;
-            boardEl.innerHTML = '';
+        const diff = document.getElementById('difficulty').value;
+        rows = CONFIG[diff].rows;
+        cols = CONFIG[diff].cols;
+        totalMines = CONFIG[diff].mines;
+        flagsLeft = totalMines;
+        
+        isGameOver = false;
+        firstClick = true;
+        stopTimer();
+        timerEl.textContent = '000';
+        updateFlagDisplay();
+        resetBtn.textContent = '🙂';
+        statusMessage.classList.add('hidden');
+        
+        // Hapus animasi shake jika ada
+        document.getElementById('gameContainer').classList.remove('shake-anim');
 
-            // Inisialisasi array data papan
-            board = Array.from({ length: rows }, () => 
-                Array.from({ length: cols }, () => ({
+        // Atur gaya grid agar menyesuaikan lebar secara proporsional
+        boardEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        boardEl.innerHTML = '';
+
+        // Inisialisasi array data papan
+        board = Array.from({ length: rows }, () => 
+            Array.from({ length: cols }, () => ({
                     isMine: false,
                     isRevealed: false,
                     isFlagged: false,
@@ -197,14 +213,14 @@
             );
 
             // Buat elemen cell di DOM
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    const cell = document.createElement('div');
-                    cell.className = 'cell bg-gray-200 hover:bg-gray-300 cursor-pointer flex items-center justify-center text-xl font-bold shadow-[inset_-2px_-2px_0px_rgba(0,0,0,0.2),inset_2px_2px_0px_rgba(255,255,255,0.7)] transition-colors';
-                    cell.dataset.row = r;
-                    cell.dataset.col = c;
-                    
-                    // Event Listeners
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell bg-gray-200 hover:bg-gray-300 cursor-pointer flex items-center justify-center font-bold shadow-[inset_-2px_-2px_0px_rgba(0,0,0,0.2),inset_2px_2px_0px_rgba(255,255,255,0.7)] transition-colors';
+                cell.dataset.row = r;
+                cell.dataset.col = c;
+                
+                // Event Listeners
                     cell.addEventListener('click', () => handleCellClick(r, c));
                     cell.addEventListener('contextmenu', (e) => {
                         e.preventDefault();
@@ -297,23 +313,23 @@
         }
 
         function revealCell(r, c) {
-            const cell = board[r][c];
-            if (cell.isRevealed || cell.isFlagged) return;
+        const cell = board[r][c];
+        if (cell.isRevealed || cell.isFlagged) return;
 
-            cell.isRevealed = true;
-            const cellEl = getCellEl(r, c);
-            
-            // Hapus efek tombol (bevel) dan ganti warna
-            cellEl.className = 'cell bg-gray-100 flex items-center justify-center text-xl font-bold border border-gray-300 revealed-anim';
+        cell.isRevealed = true;
+        const cellEl = getCellEl(r, c);
+        
+        // Hapus efek tombol (bevel) dan ganti warna
+        cellEl.className = 'cell bg-gray-100 flex items-center justify-center font-bold border border-gray-300 revealed-anim';
 
-            if (cell.isMine) {
-                cellEl.innerHTML = '💥';
-                cellEl.classList.add('bg-red-500');
-                gameOver(false);
-                return;
-            }
+        if (cell.isMine) {
+            cellEl.innerHTML = '💥';
+            cellEl.classList.add('mine-explode');
+            gameOver(false);
+            return;
+        }
 
-            if (cell.neighborMines > 0) {
+        if (cell.neighborMines > 0) {
                 cellEl.textContent = cell.neighborMines;
                 cellEl.classList.add(NUMBER_COLORS[cell.neighborMines]);
             } else {
@@ -329,11 +345,11 @@
                             if (nR >= 0 && nR < rows && nC >= 0 && nC < cols) {
                                 const nCell = board[nR][nC];
                                 if (!nCell.isRevealed && !nCell.isFlagged) {
-                                    nCell.isRevealed = true;
-                                    const nCellEl = getCellEl(nR, nC);
-                                    nCellEl.className = 'cell bg-gray-100 flex items-center justify-center text-xl font-bold border border-gray-300 revealed-anim';
-                                    
-                                    if (nCell.neighborMines > 0) {
+                                nCell.isRevealed = true;
+                                const nCellEl = getCellEl(nR, nC);
+                                nCellEl.className = 'cell bg-gray-100 flex items-center justify-center font-bold border border-gray-300 revealed-anim';
+                                
+                                if (nCell.neighborMines > 0) {
                                         nCellEl.textContent = nCell.neighborMines;
                                         nCellEl.classList.add(NUMBER_COLORS[nCell.neighborMines]);
                                     } else {
@@ -361,18 +377,26 @@
         }
 
         function gameOver(win) {
-            isGameOver = true;
-            stopTimer();
-            resetBtn.textContent = win ? '😎' : '😵';
+        isGameOver = true;
+        stopTimer();
+        resetBtn.textContent = win ? '😎' : '😵';
 
-            statusMessage.classList.remove('hidden');
-            statusMessage.classList.remove('text-green-600', 'text-red-600');
+        statusMessage.classList.remove('hidden');
+        statusMessage.classList.remove('text-green-600', 'text-red-600');
+        
+        if (win) {
+            statusMessage.textContent = '🎉 Selamat! Anda Menang! 🎉';
+            statusMessage.classList.add('text-green-600');
             
-            if (win) {
-                statusMessage.textContent = '🎉 Selamat! Anda Menang! 🎉';
-                statusMessage.classList.add('text-green-600');
-                // Tandai semua ranjau yang tersisa
-                for (let r = 0; r < rows; r++) {
+            // Efek Confetti
+            confetti({
+                particleCount: 150,
+                spread: 80,
+                origin: { y: 0.6 }
+            });
+
+            // Tandai semua ranjau yang tersisa
+            for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
                         if (board[r][c].isMine && !board[r][c].isFlagged) {
                             const cellEl = getCellEl(r, c);
@@ -381,20 +405,24 @@
                     }
                 }
                 flagsLeft = 0;
-                updateFlagDisplay();
-            } else {
-                statusMessage.textContent = 'Boom! Anda terkena Ranjau!';
-                statusMessage.classList.add('text-red-600');
-                // Tampilkan semua ranjau
-                for (let r = 0; r < rows; r++) {
-                    for (let c = 0; c < cols; c++) {
-                        const cell = board[r][c];
-                        if (cell.isMine) {
-                            const cellEl = getCellEl(r, c);
-                            if (!cell.isRevealed && !cell.isFlagged) {
-                                cellEl.innerHTML = '💣';
-                                cellEl.className = 'cell bg-gray-100 flex items-center justify-center text-xl border border-gray-300 revealed-anim';
-                            } else if (cell.isFlagged && !cell.isMine) { // Salah menandai
+            updateFlagDisplay();
+        } else {
+            statusMessage.textContent = 'Boom! Anda terkena Ranjau!';
+            statusMessage.classList.add('text-red-600');
+            
+            // Efek Layar Getar (Shake)
+            document.getElementById('gameContainer').classList.add('shake-anim');
+
+            // Tampilkan semua ranjau
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const cell = board[r][c];
+                    if (cell.isMine) {
+                        const cellEl = getCellEl(r, c);
+                        if (!cell.isRevealed && !cell.isFlagged) {
+                            cellEl.innerHTML = '💣';
+                            cellEl.className = 'cell bg-gray-100 flex items-center justify-center border border-gray-300 revealed-anim';
+                        } else if (cell.isFlagged && !cell.isMine) { // Salah menandai
                                 cellEl.innerHTML = '❌';
                             }
                         } else if (cell.isFlagged) {
